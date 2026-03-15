@@ -22,14 +22,14 @@ https://www.1lou.me/forum-8-1.htm?orderby=tid&digest=0
 - 从第 1 页到第 `totalPage` 页，依次请求以下 URL：
   `https://www.1lou.me/forum-8-{currentPage}.htm?orderby=tid&digest=0`
 - 在每个页面中，找到所有 class 属性**同时包含**以下关键词的标签：
-  `media`、`thread`、`tap`、`top_1`、`hidden-sm`
+  `media`, `thread`, `tap`, `hidden-sm`
 - 对每个匹配标签，提取其子元素中 class 包含 `subject break-all` 的标签
-- 在该标签内，按顺序提取以下 `` 标签内容：
-  - 第 2 个 ``：年份（year）
-  - 第 3 个 ``：地区（region）
-  - 第 4 个 ``：类型（type）
-  - 第 5 个 ``：分类（category）
-  - 第 6 个 ``：专辑名称（album），取其文本内容
+- 在该标签内，按顺序提取以下 a 标签内容：
+  - 第 2 个 a：年份（year）
+  - 第 3 个 a：地区（region）
+  - 第 4 个 a：类型（type）
+  - 第 5 个 a：分类（category）
+  - 第 6 个 a：专辑名称（album），取其文本内容, 并获取 href的值，拼接上 `https://www.1lou.me`，保存为变量 `albumUrl`
 
 ### 步骤 3：保存数据
 - 将所有专辑数据整理为 JSON 数组，每条记录包含字段：

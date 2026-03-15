@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>音乐专辑库</title>
+    <style>
+        /* ── 字体 ─────────────────────────────────────────────── */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+        /* ── 变量 ─────────────────────────────────────────────── */
+        :root {
+            --bg:        #0d0d0d;
+            --surface:   #161616;
+            --border:    #2a2a2a;
+            --accent:    #c8a96e;        /* 暖金色 */
+            --accent2:   #7eb8c8;        /* 冷蓝色 */
+            --text:      #e8e2d9;
+            --muted:     #6b6560;
+            --row-even:  #131313;
+            --row-odd:   #181818;
+            --row-hover: #1f1e1b;
+            --radius:    6px;
+            --font-serif: 'Noto Serif SC', serif;
+            --font-mono:  'JetBrains Mono', monospace;
+        }
+
+        /* ── 重置 ─────────────────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font-serif);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        /* ── 顶部标题栏 ───────────────────────────────────────── */
+        header {
+            padding: 48px 60px 32px;
+            border-bottom: 1px solid var(--border);
+            position: relative;
+            overflow: hidden;
+        }
+        header::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                    radial-gradient(ellipse 60% 120% at 80% -20%, rgba(200,169,110,.12) 0%, transparent 70%),
+                    radial-gradient(ellipse 40% 80% at 10% 110%, rgba(126,184,200,.08) 0%, transparent 60%);
+            pointer-events: none;
+        }
+        .header-inner { position: relative; max-width: 1200px; margin: 0 auto; }
+        .header-label {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            letter-spacing: .2em;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 10px;
+            opacity: .85;
+        }
+        h1 {
+            font-size: clamp(28px, 5vw, 52px);
+            font-weight: 700;
+            letter-spacing: -.02em;
+            line-height: 1.1;
+            background: linear-gradient(135deg, var(--text) 0%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .header-sub {
+            margin-top: 10px;
+            font-size: 14px;
+            color: var(--muted);
+            font-family: var(--font-mono);
+        }
+        #total-count {
+            color: var(--accent2);
+            font-weight: 500;
+        }
+
+        /* ── 主体区域 ─────────────────────────────────────────── */
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 60px 80px;
+        }
+
+        /* ── 筛选 + 搜索面板 ──────────────────────────────────── */
+        .filter-panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px 28px;
+            margin-bottom: 32px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            align-items: end;
+        }
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .filter-group label {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+        .filter-group select,
+        .filter-group input {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-family: var(--font-serif);
+            font-size: 14px;
+            padding: 9px 12px;
+            outline: none;
+            transition: border-color .2s;
+            width: 100%;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+        .filter-group select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b6560' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 32px;
+            cursor: pointer;
+        }
+        .filter-group select:focus,
+        .filter-group input:focus {
+            border-color: var(--accent);
+        }
+        .filter-group input::placeholder { color: var(--muted); }
+
+        /* 重置按钮 */
+        .btn-reset {
+            align-self: end;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--muted);
+            cursor: pointer;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            letter-spacing: .08em;
+            padding: 9px 18px;
+            transition: border-color .2s, color .2s;
+            white-space: nowrap;
+        }
+        .btn-reset:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* ── 结果统计 ─────────────────────────────────────────── */
+        .result-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--muted);
+        }
+        #result-count { color: var(--accent2); }
+
+        /* ── 表格 ─────────────────────────────────────────────── */
+        .table-wrap {
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        thead tr {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+        }
+        thead th {
+            padding: 14px 16px;
+            text-align: left;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+            color: var(--muted);
+            white-space: nowrap;
+            cursor: pointer;
+            user-select: none;
+            transition: color .2s;
+        }
+        thead th:hover { color: var(--accent); }
+        thead th .sort-icon {
+            display: inline-block;
+            margin-left: 4px;
+            opacity: .4;
+            font-style: normal;
+        }
+        thead th.asc  .sort-icon::after { content: '↑'; opacity: 1; color: var(--accent); }
+        thead th.desc .sort-icon::after { content: '↓'; opacity: 1; color: var(--accent); }
+        thead th:not(.asc):not(.desc) .sort-icon::after { content: '↕'; }
+
+        tbody tr:nth-child(even) { background: var(--row-even); }
+        tbody tr:nth-child(odd)  { background: var(--row-odd); }
+        tbody tr {
+            border-bottom: 1px solid var(--border);
+            transition: background .15s;
+        }
+        tbody tr:last-child { border-bottom: none; }
+        tbody tr:hover { background: var(--row-hover); }
+        tbody td {
+            padding: 12px 16px;
+            color: var(--text);
+            vertical-align: middle;
+        }
+        tbody td:first-child { font-family: var(--font-mono); font-size: 13px; color: var(--accent); }
+        .album-name { font-weight: 600; }
+
+        /* 高亮搜索词 */
+        mark {
+            background: rgba(200,169,110,.35);
+            color: var(--accent);
+            border-radius: 2px;
+            padding: 0 1px;
+        }
+
+        /* ── 空态 / 加载态 ────────────────────────────────────── */
+        .state-msg {
+            text-align: center;
+            padding: 80px 20px;
+            color: var(--muted);
+            font-family: var(--font-mono);
+            font-size: 13px;
+        }
+        .state-msg .icon {
+            display: block;
+            font-size: 36px;
+            margin-bottom: 16px;
+            opacity: .4;
+        }
+        .loading-dots::after {
+            content: '';
+            animation: dots 1.4s infinite;
+        }
+        @keyframes dots {
+            0%   { content: ''; }
+            25%  { content: '.'; }
+            50%  { content: '..'; }
+            75%  { content: '...'; }
+        }
+
+        /* ── 响应式 ───────────────────────────────────────────── */
+        @media (max-width: 768px) {
+            header, main { padding-left: 20px; padding-right: 20px; }
+            .filter-panel { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 480px) {
+            .filter-panel { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-inner">
+        <p class="header-label">Music Archive</p>
+        <h1>音乐专辑库</h1>
+        <p class="header-sub">共收录 <span id="total-count">—</span> 张专辑</p>
+    </div>
+</header>
+
+<main>
+    <!-- 筛选面板 -->
+    <div class="filter-panel">
+        <div class="filter-group">
+            <label>年份</label>
+            <select id="filter-year"><option value="">全部</option></select>
+        </div>
+        <div class="filter-group">
+            <label>地区</label>
+            <select id="filter-region"><option value="">全部</option></select>
+        </div>
+        <div class="filter-group">
+            <label>类型</label>
+            <select id="filter-type"><option value="">全部</option></select>
+        </div>
+        <div class="filter-group">
+            <label>分类</label>
+            <select id="filter-category"><option value="">全部</option></select>
+        </div>
+        <div class="filter-group">
+            <label>专辑名称</label>
+            <input type="text" id="search-input" placeholder="模糊搜索专辑名…" />
+        </div>
+        <button class="btn-reset" id="btn-reset">重置筛选</button>
+    </div>
+
+    <!-- 结果统计 -->
+    <div class="result-bar">
+        <span>当前显示 <span id="result-count">0</span> 条结果</span>
+    </div>
+
+    <!-- 表格 -->
+    <div class="table-wrap">
+        <table id="albums-table">
+            <thead>
+            <tr>
+                <th data-col="year">年份<i class="sort-icon"></i></th>
+                <th data-col="region">地区<i class="sort-icon"></i></th>
+                <th data-col="type">类型<i class="sort-icon"></i></th>
+                <th data-col="category">分类<i class="sort-icon"></i></th>
+                <th data-col="album">专辑名称<i class="sort-icon"></i></th>
+            </tr>
+            </thead>
+            <tbody id="table-body">
+            <tr>
+                <td colspan="5">
+                    <div class="state-msg">
+                        <span class="icon">♪</span>
+                        <span class="loading-dots">正在加载数据</span>
+                    </div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+</main>
+
+<script>
+  /* ── 状态 ─────────────────────────────────────────────── */
+  let allData    = [];
+  let sortCol    = '';
+  let sortDir    = 'asc';
+
+  /* ── DOM 引用 ─────────────────────────────────────────── */
+  const tbody       = document.getElementById('table-body');
+  const totalCount  = document.getElementById('total-count');
+  const resultCount = document.getElementById('result-count');
+  const selYear     = document.getElementById('filter-year');
+  const selRegion   = document.getElementById('filter-region');
+  const selType     = document.getElementById('filter-type');
+  const selCategory = document.getElementById('filter-category');
+  const searchInput = document.getElementById('search-input');
+  const btnReset    = document.getElementById('btn-reset');
+  const thCells     = document.querySelectorAll('thead th[data-col]');
+
+  /* ── 数据加载 ─────────────────────────────────────────── */
+  async function loadData() {
+    try {
+      const res = await fetch('http://localhost:5000/data');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      allData = await res.json();
+      totalCount.textContent = allData.length.toLocaleString();
+      buildSelects();
+      renderTable();
+    } catch (e) {
+      tbody.innerHTML = `
+        <tr><td colspan="5">
+          <div class="state-msg">
+            <span class="icon">⚠</span>
+            无法连接到数据服务（localhost:5000）<br>
+            请先运行 <code>python scraper.py</code>
+          </div>
+        </td></tr>`;
+      console.error(e);
+    }
+  }
+
+  /* ── 动态生成下拉选项 ─────────────────────────────────── */
+  function buildSelects() {
+    const fields = { year: selYear, region: selRegion, type: selType, category: selCategory };
+    for (const [key, sel] of Object.entries(fields)) {
+      const values = [...new Set(allData.map(d => d[key]).filter(Boolean))].sort();
+      values.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        sel.appendChild(opt);
+      });
+    }
+  }
+
+  /* ── 筛选逻辑 ─────────────────────────────────────────── */
+  function getFiltered() {
+    const year     = selYear.value;
+    const region   = selRegion.value;
+    const type     = selType.value;
+    const category = selCategory.value;
+    const keyword  = searchInput.value.trim().toLowerCase();
+
+    return allData.filter(d =>
+      (!year     || d.year     === year)     &&
+      (!region   || d.region   === region)   &&
+      (!type     || d.type     === type)     &&
+      (!category || d.category === category) &&
+      (!keyword  || d.album.toLowerCase().includes(keyword))
+    );
+  }
+
+  /* ── 排序 ─────────────────────────────────────────────── */
+  function sortData(data) {
+    if (!sortCol) return data;
+    return [...data].sort((a, b) => {
+      const va = (a[sortCol] || '').toString();
+      const vb = (b[sortCol] || '').toString();
+      return sortDir === 'asc' ? va.localeCompare(vb, 'zh') : vb.localeCompare(va, 'zh');
+    });
+  }
+
+  /* ── 高亮关键词 ───────────────────────────────────────── */
+  function highlight(text, keyword) {
+    if (!keyword) return escHtml(text);
+    const esc = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return escHtml(text).replace(new RegExp(esc, 'gi'), m => `<mark>${m}</mark>`);
+  }
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  /* ── 渲染表格 ─────────────────────────────────────────── */
+  function renderTable() {
+    const filtered = sortData(getFiltered());
+    resultCount.textContent = filtered.length.toLocaleString();
+    const keyword = searchInput.value.trim().toLowerCase();
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `
+        <tr><td colspan="5">
+          <div class="state-msg">
+            <span class="icon">🔍</span>没有找到符合条件的专辑
+          </div>
+        </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(d => `
+      <tr>
+        <td>${escHtml(d.year)}</td>
+        <td>${escHtml(d.region)}</td>
+        <td>${escHtml(d.type)}</td>
+        <td>${escHtml(d.category)}</td>
+        <td class="album-name">${highlight(d.album, keyword)}</td>
+      </tr>`).join('');
+  }
+
+  /* ── 排序点击 ─────────────────────────────────────────── */
+  thCells.forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (sortCol === col) {
+        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortCol = col;
+        sortDir = 'asc';
+      }
+      thCells.forEach(t => t.classList.remove('asc', 'desc'));
+      th.classList.add(sortDir);
+      renderTable();
+    });
+  });
+
+  /* ── 事件绑定 ─────────────────────────────────────────── */
+  [selYear, selRegion, selType, selCategory].forEach(sel =>
+    sel.addEventListener('change', renderTable)
+  );
+  searchInput.addEventListener('input', renderTable);
+
+  btnReset.addEventListener('click', () => {
+    selYear.value = selRegion.value = selType.value = selCategory.value = '';
+    searchInput.value = '';
+    sortCol = ''; sortDir = 'asc';
+    thCells.forEach(t => t.classList.remove('asc', 'desc'));
+    renderTable();
+  });
+
+  /* ── 启动 ─────────────────────────────────────────────── */
+  loadData();
+</script>
+</body>
+</html>
