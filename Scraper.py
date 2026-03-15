@@ -1,158 +1,203 @@
 """
 scraper.py
-功能：爬取 1lou.me 音乐论坛的专辑数据，保存为 audio.json，并启动 Flask API 服务
-依赖：requests, beautifulsoup4, flask, flask-cors
+==========
+步骤1 - 获取总页数（pagination 标签倒数第二个子元素，去除 '...' 前缀）
+步骤2 - 遍历所有页面
+        · 匹配 class 同时含 media / thread / tap / hidden-sm 的标签
+        · 子元素取 class 含 'subject break-all' 的标签
+        · 在该标签内按顺序提取 <a> 标签：
+            a[1] → year（年份）
+            a[2] → region（地区）
+            a[3] → type（类型）
+            a[4] → category（分类）
+            a[5] → album（专辑名称，文本）+ href 拼接 albumUrl
+步骤3 - 保存至 audio.json（字段：year/region/type/category/album/albumUrl）
+步骤4 - Flask GET /data，CORS 开启，端口 5000
+
+依赖：pip install requests beautifulsoup4 flask flask-cors
 """
 
 import json
-import time
 import os
+import time
+
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify
 from flask_cors import CORS
 
-# ── 配置 ──────────────────────────────────────────────────────────────
-BASE_URL   = "https://www.1lou.me/forum-8-{page}.htm?orderby=tid&digest=0"
-OUTPUT     = "audio.json"
-HEADERS    = {
+# ── 全局配置 ────────────────────────────────────────────────────────────
+BASE_URL      = "https://www.1lou.me/forum-8-{page}.htm?orderby=tid&digest=0"
+SITE_ROOT     = "https://www.1lou.me"
+JSON_FILE     = "audio.json"
+REQUEST_DELAY = 1.0   # 每页请求间隔（秒）
+HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
-    )
+    ),
+    "Accept-Language": "zh-CN,zh;q=0.9",
 }
-DELAY      = 1.0   # 每页请求间隔（秒），避免过于频繁
-# ──────────────────────────────────────────────────────────────────────
 
 
+# ════════════════════════════════════════════════════════════════════════
+# 步骤 1：获取总页数
+# ════════════════════════════════════════════════════════════════════════
 def get_total_pages(session: requests.Session) -> int:
     """
-    步骤 1：请求首页，从 pagination 标签获取总页数。
-    倒数第二个子元素的文本可能带有 '...' 前缀，去除后转为 int。
+    请求首页，找到 class 包含 'pagination' 的标签，
+    取其倒数第二个子元素的文本，去除开头 '...' 后转为 int。
     """
     url = BASE_URL.format(page=1)
-    resp = session.get(url, headers=HEADERS, timeout=15)
+    resp = session.get(url, headers=HEADERS, timeout=20)
     resp.raise_for_status()
 
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    # 找到 class 包含 pagination 的标签
-    pagination = soup.find(class_=lambda c: c and "pagination" in c)
+    pagination = soup.find(
+        lambda tag: "pagination" in " ".join(tag.get("class", []))
+    )
     if pagination is None:
         raise RuntimeError("未找到 pagination 标签，请检查页面结构")
 
-    children = [c for c in pagination.children if c != "\n" and str(c).strip()]
-    # 倒数第二个子元素
-    second_last = children[-2]
-    raw_text = second_last.get_text(strip=True)
-    # 去除可能存在的 '...' 前缀
-    page_text = raw_text.lstrip(".").strip()
-    total = int(page_text)
-    print(f"[INFO] 总页数：{total}")
+    # 过滤纯空白文本节点
+    children = [c for c in pagination.children if str(c).strip()]
+
+    if len(children) < 2:
+        raise RuntimeError(f"pagination 子元素不足，仅有 {len(children)} 个")
+
+    raw = children[-2].get_text(strip=True)   # 倒数第二个子元素
+    total = int(raw.lstrip("."))              # 去除 '...' 前缀
+    print(f"[步骤1] 总页数 = {total}")
     return total
 
 
-def parse_page(session: requests.Session, page: int) -> list[dict]:
+# ════════════════════════════════════════════════════════════════════════
+# 步骤 2：解析单页专辑数据
+# ════════════════════════════════════════════════════════════════════════
+def parse_page(session: requests.Session, page: int) -> list:
     """
-    步骤 2：爬取单页专辑数据。
-    返回当前页所有专辑的列表，每条记录为 dict。
+    匹配 class 同时包含 media / thread / tap / hidden-sm 的标签，
+    在其子元素 class 含 'subject break-all' 的标签内，
+    按顺序提取 <a> 标签（下标从 0 开始）：
+      anchors[1] → year
+      anchors[2] → region
+      anchors[3] → type
+      anchors[4] → category
+      anchors[5] → album 文本 + href → albumUrl
     """
     url = BASE_URL.format(page=page)
-    resp = session.get(url, headers=HEADERS, timeout=15)
+    resp = session.get(url, headers=HEADERS, timeout=20)
     resp.raise_for_status()
 
     soup = BeautifulSoup(resp.text, "html.parser")
-    albums = []
 
-    # 找到同时包含 media / thread / tap / top_1 / hidden-sm 的标签 media thread tap hidden-sm
-    required_classes = {"media", "thread", "tap", "hidden-sm"}
+    # class 需同时包含这 4 个关键词
+    REQUIRED = {"media", "thread", "tap", "hidden-sm"}
+
     threads = soup.find_all(
-        lambda tag: required_classes.issubset(set(tag.get("class", [])))
+        lambda tag: REQUIRED.issubset(set(tag.get("class", [])))
     )
 
+    records = []
     for thread in threads:
-        # 找到 class 包含 'subject break-all' 的子元素
-        subject = thread.find(class_=lambda c: c and "subject" in c and "break-all" in c)
+        # 子元素：class 同时含 'subject' 和 'break-all'
+        subject = thread.find(
+            lambda tag: (
+                "subject"   in tag.get("class", []) and
+                "break-all" in tag.get("class", [])
+            )
+        )
         if subject is None:
             continue
 
-        # 提取该标签内所有 <span> 标签
-        spans = subject.find_all("span")
-        # 至少需要 6 个 span（索引 0-5）
-        if len(spans) < 6:
-            continue
+        # 取该标签内所有 <a> 标签
+        anchors = subject.find_all("a")
+        if len(anchors) < 6:
+            continue   # 数量不足，跳过
 
-        # 按位置取值（下标从 0 开始，需要第 2~6 个，即索引 1~5）
-        year     = spans[1].get_text(strip=True)
-        region   = spans[2].get_text(strip=True)
-        typ      = spans[3].get_text(strip=True)
-        category = spans[4].get_text(strip=True)
-        album    = spans[5].get_text(strip=True)
+        # 按位置提取（索引 1~5，即第 2~6 个）
+        year     = anchors[1].get_text(strip=True)
+        region   = anchors[2].get_text(strip=True)
+        typ      = anchors[3].get_text(strip=True)
+        category = anchors[4].get_text(strip=True)
+        album    = anchors[5].get_text(strip=True)
 
-        albums.append({
+        # 第 6 个 <a> 的 href 拼接站点根域名
+        href     = anchors[5].get("href", "")
+        album_url = SITE_ROOT + "/" + href if href else ""
+
+        records.append({
             "year":     year,
             "region":   region,
             "type":     typ,
             "category": category,
             "album":    album,
+            "albumUrl": album_url,
         })
 
-    return albums
+    return records
 
 
-def scrape_all() -> list[dict]:
-    """
-    步骤 2-3：遍历全部页面，汇总并保存数据到 audio.json。
-    """
+# ════════════════════════════════════════════════════════════════════════
+# 步骤 2-3：爬取全部页面，保存 audio.json
+# ════════════════════════════════════════════════════════════════════════
+def scrape_and_save() -> list:
+    """遍历所有页面，汇总记录，写入 audio.json。"""
     session = requests.Session()
     total_pages = get_total_pages(session)
-    all_albums: list[dict] = []
+    all_records = []
 
     for page in range(1, total_pages + 1):
-        print(f"[INFO] 正在爬取第 {page}/{total_pages} 页 ...", end=" ")
+        print(f"[步骤2] 第 {page:>4}/{total_pages} 页...", end=" ", flush=True)
         try:
-            albums = parse_page(session, page)
-            all_albums.extend(albums)
-            print(f"本页获取 {len(albums)} 条，累计 {len(all_albums)} 条")
-        except Exception as e:
-            print(f"[WARN] 第 {page} 页爬取失败：{e}")
+            records = parse_page(session, page)
+            all_records.extend(records)
+            print(f"本页 {len(records):>3} 条 | 累计 {len(all_records)} 条")
+        except Exception as exc:
+            print(f"[WARN] 失败：{exc}")
 
-        # 礼貌性延迟，避免给服务器带来过大压力
         if page < total_pages:
-            time.sleep(DELAY)
+            time.sleep(REQUEST_DELAY)
 
-    # 步骤 3：保存 JSON
-    with open(OUTPUT, "w", encoding="utf-8") as f:
-        json.dump(all_albums, f, ensure_ascii=False, indent=2)
-    print(f"\n[INFO] 数据已保存至 {OUTPUT}，共 {len(all_albums)} 条记录")
-    return all_albums
+    # 步骤 3：保存
+    with open(JSON_FILE, "w", encoding="utf-8") as f:
+        json.dump(all_records, f, ensure_ascii=False, indent=2)
+
+    print(f"\n[步骤3] 已保存 {len(all_records)} 条记录 → {JSON_FILE}")
+    return all_records
 
 
-# ── Flask 应用 ─────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════
+# 步骤 4：Flask 接口
+# ════════════════════════════════════════════════════════════════════════
 app = Flask(__name__)
-CORS(app)  # 允许所有域跨域访问
+CORS(app)
 
 
 @app.route("/data", methods=["GET"])
 def get_data():
-    """步骤 4：读取 audio.json 并以 JSON 格式返回全部数据"""
-    if not os.path.exists(OUTPUT):
-        return jsonify({"error": f"{OUTPUT} 不存在，请先运行爬虫"}), 404
-    with open(OUTPUT, "r", encoding="utf-8") as f:
+    """读取 audio.json，以 JSON 格式返回全部数据。"""
+    if not os.path.exists(JSON_FILE):
+        return jsonify({"error": f"{JSON_FILE} 不存在，请先运行爬虫"}), 404
+    with open(JSON_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
     return jsonify(data)
 
 
-# ── 入口 ───────────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════
+# 入口
+# ════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    # 如果 audio.json 不存在则先爬取
-    if not os.path.exists(OUTPUT):
-        print("[INFO] audio.json 不存在，开始爬取数据 ...\n")
-        scrape_all()
+    if not os.path.exists(JSON_FILE):
+        print("=" * 60)
+        print("  audio.json 不存在，开始爬取数据")
+        print("=" * 60)
+        scrape_and_save()
     else:
-        print(f"[INFO] 检测到已有 {OUTPUT}，跳过爬虫，直接启动 Flask 服务")
-        print("[INFO] 如需重新爬取，请删除 audio.json 后再运行本脚本")
+        print(f"[INFO] 检测到已有 {JSON_FILE}，跳过爬取")
+        print("[INFO] 如需重新爬取，请删除 audio.json 后再运行")
 
-    print("\n[INFO] 启动 Flask 服务，监听 http://localhost:5000\n")
+    print("\n[步骤4] 启动 Flask 服务 → http://localhost:5000/data\n")
     app.run(host="0.0.0.0", port=5000, debug=False)
